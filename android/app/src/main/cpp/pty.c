@@ -142,12 +142,17 @@ Java_fr_apkfold_cyber_Pty_start(JNIEnv *env, jclass clazz, jstring jcmd, jobject
 
         clearenv();
         for (char **p = envp; *p; p++) putenv(*p);
-        if (cwd == NULL || chdir(cwd) != 0) chdir("/");
+        if (cwd == NULL || chdir(cwd) != 0) {
+            if (chdir("/") != 0) { /* rien de mieux à faire */ }
+        }
 
         execvp(cmd, argv);
         char msg[512];
         int len = snprintf(msg, sizeof msg, "\r\nImpossible de lancer %s : %s\r\n", cmd, strerror(errno));
-        if (len > 0) write(2, msg, (size_t) len);
+        if (len > 0) {
+            ssize_t w = write(2, msg, (size_t) len);
+            (void) w;
+        }
         _exit(127);
     }
 

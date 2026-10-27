@@ -28,7 +28,7 @@ import java.util.concurrent.TimeUnit;
 
 /** Session SSH interactive (bibliothèque JSch). */
 final class SshSession implements TermSession {
-    private final CyberBridge bridge;
+    private final SessionEvents bridge;
     private final String id;
     private final JSONObject o;
     private final ExecutorService io = Executors.newSingleThreadExecutor();
@@ -40,7 +40,16 @@ final class SshSession implements TermSession {
     private volatile boolean hostKeyAccepted;
     private volatile CountDownLatch hostKeyLatch;
 
-    SshSession(CyberBridge bridge, String id, JSONObject o) {
+    static {
+        // Android n'a pas Ed25519/X25519 dans son fournisseur Java : on passe par Bouncy Castle (inclus dans l'APK)
+        JSch.setConfig("ssh-ed25519", "com.jcraft.jsch.bc.SignatureEd25519");
+        JSch.setConfig("ssh-ed448", "com.jcraft.jsch.bc.SignatureEd448");
+        JSch.setConfig("keypairgen.eddsa", "com.jcraft.jsch.bc.KeyPairGenEdDSA");
+        JSch.setConfig("xdh", "com.jcraft.jsch.bc.XDH");
+        JSch.setConfig("chacha20-poly1305@openssh.com", "com.jcraft.jsch.bc.ChaCha20Poly1305");
+    }
+
+    SshSession(SessionEvents bridge, String id, JSONObject o) {
         this.bridge = bridge;
         this.id = id;
         this.o = o;
@@ -49,9 +58,7 @@ final class SshSession implements TermSession {
     static String fingerprint(byte[] key) {
         try {
             byte[] d = MessageDigest.getInstance("SHA-256").digest(key);
-            String b64 = android.util.Base64.encodeToString(d, android.util.Base64.NO_WRAP);
-            while (b64.endsWith("=")) b64 = b64.substring(0, b64.length() - 1);
-            return "SHA256:" + b64;
+            return "SHA256:" + java.util.Base64.getEncoder().withoutPadding().encodeToString(d);
         } catch (Exception e) {
             return "?";
         }

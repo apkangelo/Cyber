@@ -21,7 +21,7 @@ import java.util.regex.Pattern;
 
 /** Shell local Android (mksh) dans un vrai pseudo-terminal. */
 final class LocalSession implements TermSession {
-    private final CyberBridge bridge;
+    private final SessionEvents bridge;
     private final String id;
     private final JSONObject opts;
     private final Context ctx;
@@ -33,7 +33,7 @@ final class LocalSession implements TermSession {
     private FileOutputStream out;
     private volatile boolean closed;
 
-    LocalSession(CyberBridge bridge, String id, JSONObject opts, Context ctx) {
+    LocalSession(SessionEvents bridge, String id, JSONObject opts, Context ctx) {
         this.bridge = bridge;
         this.id = id;
         this.opts = opts;

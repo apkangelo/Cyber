@@ -24,7 +24,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /** Objet exposé à l'interface web sous le nom « CyberAndroid ». */
-final class CyberBridge {
+final class CyberBridge implements SessionEvents {
     private final MainActivity activity;
     private final WebView web;
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -183,7 +183,8 @@ final class CyberBridge {
 
     /* ---------------- évènements vers JavaScript ---------------- */
 
-    void emitData(String id, byte[] buf, int len) {
+    @Override
+    public void emitData(String id, byte[] buf, int len) {
         synchronized (lock) {
             ByteArrayOutputStream b = pending.get(id);
             if (b == null) {
@@ -240,7 +241,8 @@ final class CyberBridge {
         return o;
     }
 
-    void ready(String id) {
+    @Override
+    public void ready(String id) {
         emit(event("ready", id));
     }
 
@@ -253,7 +255,8 @@ final class CyberBridge {
         emit(o);
     }
 
-    void error(String id, String message) {
+    @Override
+    public void error(String id, String message) {
         JSONObject o = event("error", id);
         try {
             o.put("message", message);
@@ -262,7 +265,8 @@ final class CyberBridge {
         emit(o);
     }
 
-    void hostKey(String id, String host, int port, String algo, String fingerprint, boolean changed, String expected) {
+    @Override
+    public void hostKey(String id, String host, int port, String algo, String fingerprint, boolean changed, String expected) {
         JSONObject o = event("hostkey", id);
         try {
             o.put("host", host);
@@ -276,7 +280,8 @@ final class CyberBridge {
         emit(o);
     }
 
-    void exit(String id, Integer code) {
+    @Override
+    public void exit(String id, Integer code) {
         sessions.remove(id);
         JSONObject o = event("exit", id);
         try {
