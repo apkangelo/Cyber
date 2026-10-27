@@ -1,0 +1,75 @@
+plugins {
+    id 'com.android.application'
+}
+
+// Version reprise de package.json pour que l'APK et les versions PC aient le même numéro
+def pkg = new groovy.json.JsonSlurper().parse(rootProject.file('../package.json'))
+def appVersion = pkg.version
+def parts = appVersion.tokenize('.').collect { it.toInteger() }
+def code = parts[0] * 10000 + parts[1] * 100 + parts[2]
+
+// Signature : clé du dépôt (signing/cyber.jks) ou secrets GitHub si présents
+def ksPath = System.getenv('CYBER_KEYSTORE_FILE') ?: rootProject.file('../signing/cyber.jks').absolutePath
+
+android {
+    namespace 'fr.apkfold.cyber'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'fr.apkfold.cyber'
+        minSdk 26
+        targetSdk 34
+        versionCode code
+        versionName appVersion
+        ndk {
+            abiFilters 'arm64-v8a', 'armeabi-v7a', 'x86_64'
+        }
+    }
+
+    signingConfigs {
+        cyber {
+            storeFile file(ksPath)
+            storePassword System.getenv('CYBER_KEYSTORE_PASSWORD') ?: 'cyber-apk-fold'
+            keyAlias System.getenv('CYBER_KEY_ALIAS') ?: 'cyber'
+            keyPassword System.getenv('CYBER_KEY_PASSWORD') ?: 'cyber-apk-fold'
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.cyber
+        }
+        debug {
+            signingConfig signingConfigs.cyber
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path 'src/main/cpp/CMakeLists.txt'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    packaging {
+        resources {
+            excludes += ['META-INF/versions/**', 'META-INF/*.kotlin_module', 'META-INF/LICENSE*', 'META-INF/NOTICE*', 'META-INF/DEPENDENCIES']
+        }
+    }
+
+    lint {
+        abortOnError false
+        checkReleaseBuilds false
+    }
+}
+
+dependencies {
+    implementation 'androidx.webkit:webkit:1.12.1'
+    implementation 'com.github.mwiede:jsch:0.2.20'
+    implementation 'org.bouncycastle:bcprov-jdk18on:1.78.1'
+}

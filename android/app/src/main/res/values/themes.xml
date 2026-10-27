@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="cyber_bg">#0B0614</color>
+    <color name="cyber_chrome">#130D1F</color>
+    <color name="cyber_accent">#B56CFF</color>
+
+    <style name="Theme.Cyber" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/cyber_bg</item>
+        <item name="android:statusBarColor">@color/cyber_chrome</item>
+        <item name="android:navigationBarColor">@color/cyber_chrome</item>
+        <item name="android:colorAccent">@color/cyber_accent</item>
+    </style>
+</resources>

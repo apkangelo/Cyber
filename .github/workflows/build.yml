@@ -1,0 +1,175 @@
+name: Compilation
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['**.md', 'docs/**']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: compilation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: Tests (SSH, shell local, interface)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Dépendances
+        run: scripts/ci-run.sh "npm install" npm install --no-audit --no-fund
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      - name: Interface
+        run: scripts/ci-run.sh "Interface" node scripts/build-web.mjs
+      - name: Clé de test (générée par l'interface)
+        run: scripts/ci-run.sh "Clé" node tests/make-key.mjs
+      - name: Serveur OpenSSH de test
+        run: |
+          docker run -d --name sshd -p 2222:2222 \
+            -e PUID=1000 -e PGID=1000 -e PASSWORD_ACCESS=true \
+            -e USER_NAME=cyber -e USER_PASSWORD=cyber \
+            -e PUBLIC_KEY="$(cat tests/out/id_ed25519.pub)" \
+            lscr.io/linuxserver/openssh-server:latest
+          for i in $(seq 1 90); do
+            if docker logs sshd 2>&1 | grep -q "done"; then break; fi
+            sleep 1
+          done
+          for i in $(seq 1 30); do (echo > /dev/tcp/127.0.0.1/2222) 2>/dev/null && break; sleep 1; done
+          sleep 2
+      - name: Test SSH
+        run: scripts/ci-run.sh "Test SSH" node tests/ssh-test.mjs
+      - name: Test du shell local
+        run: scripts/ci-run.sh "Test shell local" node tests/pty-test.mjs
+      - name: Test de l'interface
+        run: |
+          npm install --no-save --no-audit --no-fund playwright
+          npx playwright install --with-deps chromium
+          scripts/ci-run.sh "Test interface" node tests/ui-smoke.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: captures-interface
+          path: tests/out/*.png
+          if-no-files-found: ignore
+
+  android:
+    name: APK Android
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Dépendances de l'interface
+        run: scripts/ci-run.sh "npm install" npm install --no-audit --no-fund --ignore-scripts
+      - name: Interface
+        run: scripts/ci-run.sh "Interface" node scripts/build-web.mjs
+      - name: Compilation de l'APK
+        working-directory: android
+        env:
+          CYBER_KEYSTORE_PASSWORD: ${{ secrets.CYBER_KEYSTORE_PASSWORD }}
+          CYBER_KEY_PASSWORD: ${{ secrets.CYBER_KEY_PASSWORD }}
+          CYBER_KEY_ALIAS: ${{ secrets.CYBER_KEY_ALIAS }}
+        run: |
+          if [ -n "${{ secrets.CYBER_KEYSTORE_B64 }}" ]; then
+            echo "${{ secrets.CYBER_KEYSTORE_B64 }}" | base64 -d > "$RUNNER_TEMP/cyber.jks"
+            export CYBER_KEYSTORE_FILE="$RUNNER_TEMP/cyber.jks"
+          fi
+          ../scripts/ci-run.sh "Gradle" ./gradlew assembleRelease --no-daemon --stacktrace
+          cp app/build/outputs/apk/release/app-release.apk ../Cyber.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: Cyber.apk
+
+  desktop:
+    name: ${{ matrix.label }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            label: Windows
+            target: --win
+            files: |
+              release/Cyber-Setup.exe
+              release/Cyber-Portable.exe
+          - os: ubuntu-latest
+            label: Linux
+            target: --linux
+            files: |
+              release/Cyber.AppImage
+              release/Cyber-linux.tar.gz
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Dépendances
+        run: scripts/ci-run.sh "npm install" npm install --no-audit --no-fund
+      - name: Interface
+        run: scripts/ci-run.sh "Interface" node scripts/build-web.mjs
+      - name: Paquets
+        run: scripts/ci-run.sh "electron-builder" npx electron-builder ${{ matrix.target }} --x64 --publish never
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.os }}
+          path: ${{ matrix.files }}
+          if-no-files-found: error
+
+  release:
+    name: Publication
+    needs: [tests, android, desktop]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: android
+          path: dist
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: desktop-*
+          path: dist
+          merge-multiple: true
+      - name: Publier la version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ls -la dist
+          V=$(node -p "require('./package.json').version")
+          TAG="v$V"
+          cd dist && sha256sum * > SHA256SUMS.txt && cd ..
+          NOTES="Cyber $V — compilation n°${{ github.run_number }} ($(git rev-parse --short HEAD)).
+
+          - **Android** : Cyber.apk
+          - **Windows** : Cyber-Setup.exe (installeur) ou Cyber-Portable.exe (sans installation)
+          - **Linux** : Cyber.AppImage ou Cyber-linux.tar.gz
+
+          Empreintes SHA-256 dans SHA256SUMS.txt."
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber
+            gh release edit "$TAG" --notes "$NOTES" --latest
+          else
+            gh release create "$TAG" dist/* --title "Cyber $V" --notes "$NOTES" --latest
+          fi
