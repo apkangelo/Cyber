@@ -24,7 +24,7 @@ function friendly(err) {
   if (code === 'EHOSTUNREACH' || code === 'ENETUNREACH') return 'Serveur injoignable depuis ce réseau.';
   if (code === 'ETIMEDOUT' || /Timed out while waiting for handshake/i.test(msg)) return 'Délai dépassé : le serveur ne répond pas.';
   if (code === 'ECONNRESET') return 'La connexion a été coupée par le serveur.';
-  if (/All configured authentication methods failed/i.test(msg) || (err && err.level === 'client-authentication'))
+  if (/All configured authentication methods failed|Too many authentication failures/i.test(msg) || (err && err.level === 'client-authentication'))
     return 'Authentification refusée : utilisateur, mot de passe ou clé incorrect.';
   if (/Host denied/i.test(msg)) return 'Clé du serveur refusée.';
   if (/passphrase|privateKey|Unsupported key format|Cannot parse/i.test(msg)) return 'Clé privée illisible, ou phrase de passe manquante ou incorrecte.';

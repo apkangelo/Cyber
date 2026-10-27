@@ -107,8 +107,8 @@ final class SshSession implements TermSession {
 
             Session s = jsch.getSession(user, host, port);
             session = s;
+            // le mot de passe n'est proposé qu'une fois : pas de nouvelles tentatives en boucle s'il est faux
             s.setUserInfo(new Prompts(password, passphrase));
-            if (!password.isEmpty()) s.setPassword(password);
             Properties cfg = new Properties();
             cfg.put("StrictHostKeyChecking", "yes");
             cfg.put("PreferredAuthentications", privateKey.isEmpty()
@@ -159,7 +159,7 @@ final class SshSession implements TermSession {
         if (c instanceof ConnectException || msg.contains("Connection refused")) return "Connexion refusée : le port est fermé ou SSH n’est pas démarré sur le serveur.";
         if (c instanceof NoRouteToHostException) return "Serveur injoignable depuis ce réseau.";
         if (c instanceof SocketTimeoutException || msg.toLowerCase().contains("timeout")) return "Délai dépassé : le serveur ne répond pas.";
-        if (msg.contains("Auth fail") || msg.contains("Auth cancel")) return "Authentification refusée : utilisateur, mot de passe ou clé incorrect.";
+        if (msg.contains("Auth fail") || msg.contains("Auth cancel") || msg.contains("Too many authentication failures")) return "Authentification refusée : utilisateur, mot de passe ou clé incorrect.";
         if (msg.contains("HostKey") || msg.contains("UnknownHostKey") || msg.contains("reject HostKey")) return "Clé du serveur refusée.";
         if (msg.contains("invalid privatekey") || msg.contains("passphrase")) return "Clé privée illisible, ou phrase de passe manquante ou incorrecte.";
         if (msg.contains("Algorithm negotiation fail")) return "Aucun algorithme commun avec le serveur.";
@@ -285,6 +285,9 @@ final class SshSession implements TermSession {
     private static final class Prompts implements UserInfo, UIKeyboardInteractive {
         private final String password;
         private final String passphrase;
+        private int passwordAsked;
+        private int keyboardAsked;
+        private int passphraseAsked;
 
         Prompts(String password, String passphrase) {
             this.password = password;
@@ -303,12 +306,12 @@ final class SshSession implements TermSession {
 
         @Override
         public boolean promptPassword(String message) {
-            return !password.isEmpty();
+            return !password.isEmpty() && passwordAsked++ == 0;
         }
 
         @Override
         public boolean promptPassphrase(String message) {
-            return !passphrase.isEmpty();
+            return !passphrase.isEmpty() && passphraseAsked++ == 0;
         }
 
         @Override
@@ -322,7 +325,7 @@ final class SshSession implements TermSession {
 
         @Override
         public String[] promptKeyboardInteractive(String destination, String name, String instruction, String[] prompt, boolean[] echo) {
-            if (password.isEmpty()) return null;
+            if (password.isEmpty() || keyboardAsked++ > 0) return null;
             String[] r = new String[prompt.length];
             Arrays.fill(r, password);
             return r;
